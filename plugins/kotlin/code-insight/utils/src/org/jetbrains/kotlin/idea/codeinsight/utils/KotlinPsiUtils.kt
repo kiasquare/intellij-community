@@ -121,6 +121,10 @@ fun removeRedundantSetter(setter: KtPropertyAccessor) {
     }
 }
 
+fun KtExpression?.isTrueConstant() = this != null && node?.elementType == KtNodeTypes.BOOLEAN_CONSTANT && text == "true"
+
+fun KtExpression?.isFalseConstant() = this != null && node?.elementType == KtNodeTypes.BOOLEAN_CONSTANT && text == "false"
+
 fun KtExpression.negate(reformat: Boolean = true, isBooleanExpression: (KtExpression) -> Boolean): KtExpression {
     val specialNegation = specialNegation(reformat, isBooleanExpression)
     if (specialNegation != null) return specialNegation

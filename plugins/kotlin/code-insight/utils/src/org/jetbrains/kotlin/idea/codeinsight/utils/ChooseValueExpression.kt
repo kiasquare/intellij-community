@@ -8,6 +8,7 @@ import com.intellij.codeInsight.template.Expression
 import com.intellij.codeInsight.template.ExpressionContext
 import com.intellij.codeInsight.template.TextResult
 import com.intellij.codeInsight.template.impl.TemplateManagerImpl
+import com.intellij.openapi.util.TextRange
 import com.intellij.psi.impl.source.tree.injected.InjectedLanguageUtil
 import org.jetbrains.annotations.Nls
 
@@ -15,7 +16,8 @@ import org.jetbrains.annotations.Nls
 abstract class ChooseValueExpression<in T : Any>(
     lookupItems: Collection<T>,
     defaultItem: T,
-    @Nls private val advertisementText: String? = null
+    @Nls private val advertisementText: String? = null,
+    additionalRangesToReplaceWithChosenValue: () -> Collection<TextRange> = { emptyList() },
 ) : Expression() {
     protected abstract fun getLookupString(element: T): String
     protected abstract fun getResult(element: T): String
@@ -26,7 +28,15 @@ abstract class ChooseValueExpression<in T : Any>(
     private val lookupItems: Array<LookupElement> = lookupItems.map { suggestion ->
         LookupElementBuilder.create(suggestion, getLookupString(suggestion)).withInsertHandler { context, item ->
             val topLevelEditor = InjectedLanguageUtil.getTopLevelEditor(context.editor)
-            TemplateManagerImpl.getTemplateState(topLevelEditor)?.currentVariableRange?.let { range ->
+
+            val textRanges = additionalRangesToReplaceWithChosenValue().toMutableList()
+            TemplateManagerImpl.getTemplateState(topLevelEditor)?.currentVariableRange?.let { textRanges.add(it) }
+
+            // Make sure the replacement is done in the descending order.
+            // It prevents the replacement from changing the letters in the next text range.
+            textRanges.sortByDescending { it.startOffset }
+
+            textRanges.forEach { range ->
                 @Suppress("UNCHECKED_CAST")
                 topLevelEditor.document.replaceString(range.startOffset, range.endOffset, getResult(item.`object` as T))
             }
@@ -45,8 +55,9 @@ abstract class ChooseValueExpression<in T : Any>(
 class ChooseStringExpression(
     suggestions: Collection<String>,
     default: String = suggestions.first(),
-    @Nls advertisementText: String? = null
-) : ChooseValueExpression<String>(suggestions, default, advertisementText) {
+    @Nls advertisementText: String? = null,
+    additionalRangesToReplaceWithChosenValue: () -> Collection<TextRange> = { emptyList() },
+) : ChooseValueExpression<String>(suggestions, default, advertisementText, additionalRangesToReplaceWithChosenValue) {
     override fun getLookupString(element: String) = element
     override fun getResult(element: String) = element
 }

@@ -1,0 +1,14 @@
+import G.cat
+
+object G {
+    fun cat(x: Int, y: Int): Int {
+        return x + y
+    }
+}
+
+fun test(x: Int, y: Int): String {
+    val i = cat(x, y)
+    if (i == 1) return "one"
+    else if (i == 2) return "two"
+    else return "big"
+}
