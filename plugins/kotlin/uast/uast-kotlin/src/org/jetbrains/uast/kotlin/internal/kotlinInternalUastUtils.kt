@@ -31,6 +31,8 @@ import org.jetbrains.kotlin.load.java.lazy.descriptors.LazyJavaPackageFragment
 import org.jetbrains.kotlin.load.java.sam.SamAdapterDescriptor
 import org.jetbrains.kotlin.load.kotlin.KotlinJvmBinaryPackageSourceElement
 import org.jetbrains.kotlin.load.kotlin.TypeMappingMode
+import org.jetbrains.kotlin.load.kotlin.getOptimalModeForReturnType
+import org.jetbrains.kotlin.load.kotlin.getOptimalModeForValueParameter
 import org.jetbrains.kotlin.metadata.ProtoBuf
 import org.jetbrains.kotlin.metadata.deserialization.getExtensionOrNull
 import org.jetbrains.kotlin.metadata.jvm.JvmProtoBuf
@@ -38,6 +40,7 @@ import org.jetbrains.kotlin.metadata.jvm.deserialization.JvmMemberSignature
 import org.jetbrains.kotlin.metadata.jvm.deserialization.JvmProtoBufUtil
 import org.jetbrains.kotlin.name.StandardClassIds
 import org.jetbrains.kotlin.psi.*
+import org.jetbrains.kotlin.psi.psiUtil.containingClass
 import org.jetbrains.kotlin.psi.psiUtil.parents
 import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.DescriptorToSourceUtils
@@ -88,12 +91,13 @@ internal fun KotlinType.toPsiType(
     containingLightDeclaration: PsiModifierListOwner?,
     context: KtElement,
     typeOwnerKind: TypeOwnerKind,
-    boxed: Boolean
+    boxed: Boolean,
+    isForFake: Boolean = false,
 ): PsiType {
     if (this.isError) return UastErrorType
 
     (constructor.declarationDescriptor as? TypeAliasDescriptor)?.let { typeAlias ->
-        return typeAlias.expandedType.toPsiType(containingLightDeclaration, context, typeOwnerKind, boxed)
+        return typeAlias.expandedType.toPsiType(containingLightDeclaration, context, typeOwnerKind, boxed, isForFake)
     }
 
     if (contains { type -> type.constructor is TypeVariableTypeConstructor }) {
@@ -105,7 +109,7 @@ internal fun KotlinType.toPsiType(
             ?.typeParameterList?.typeParameters?.getOrNull(typeParameter.index)
             ?.let { return PsiTypesUtil.getClassType(it) }
         return CommonSupertypes.commonSupertype(typeParameter.upperBounds)
-            .toPsiType(containingLightDeclaration, context, typeOwnerKind, boxed)
+            .toPsiType(containingLightDeclaration, context, typeOwnerKind, boxed, isForFake)
     }
 
     if (arguments.isEmpty()) {
@@ -126,9 +130,10 @@ internal fun KotlinType.toPsiType(
                 when (val typeConstructor = this.constructor) {
                     is IntegerValueTypeConstructor ->
                         TypeUtils.getDefaultPrimitiveNumberType(typeConstructor)
-                            .toPsiType(containingLightDeclaration, context, typeOwnerKind, boxed)
+                            .toPsiType(containingLightDeclaration, context, typeOwnerKind, boxed, isForFake)
                     is IntegerLiteralTypeConstructor ->
-                        typeConstructor.getApproximatedType().toPsiType(containingLightDeclaration, context, typeOwnerKind, boxed)
+                        typeConstructor.getApproximatedType()
+                            .toPsiType(containingLightDeclaration, context, typeOwnerKind, boxed, isForFake)
                     else -> null
                 }
             }
@@ -144,9 +149,27 @@ internal fun KotlinType.toPsiType(
         .getLanguageVersionSettings(context)
 
     val signatureWriter = BothSignatureWriter(BothSignatureWriter.Mode.TYPE)
-    val typeMappingMode = if (boxed) TypeMappingMode.GENERIC_ARGUMENT_UAST else TypeMappingMode.DEFAULT_UAST
+
     val approximatedType =
         TypeApproximator(this.builtIns, languageVersionSettings).approximateDeclarationType(this, true)
+    val typeMappingMode =
+        when {
+            isForFake && context is KtParameter -> {
+                KotlinUastTypeMapper.typeSystem.getOptimalModeForValueParameter(
+                    approximatedType,
+                    isForUast = true
+                )
+            }
+            isForFake && context is KtCallableDeclaration -> {
+                KotlinUastTypeMapper.typeSystem.getOptimalModeForReturnType(
+                    approximatedType,
+                    isAnnotationMethod = context.containingClass()?.isAnnotation() == true,
+                    isForUast = true
+                )
+            }
+            boxed -> TypeMappingMode.GENERIC_ARGUMENT_UAST
+            else -> TypeMappingMode.DEFAULT_UAST
+        }
     KotlinUastTypeMapper.mapType(approximatedType, signatureWriter, typeMappingMode)
 
     val signature = StringCharacterIterator(signatureWriter.toString())
@@ -171,12 +194,12 @@ internal fun KotlinType.toPsiType(
 private fun renderAnnotation(annotation: AnnotationDescriptor): String? {
     val fqn = annotation.fqName?.asString() ?: return null
     val valueArguments = annotation.allValueArguments
-    val valueesList = SmartList<String>().apply {
+    val valuesList = SmartList<String>().apply {
         for ((k, v) in valueArguments.entries) {
             add("${k.identifier} = ${renderConstantValue(v)}")
         }
     }
-    return "@$fqn(${valueesList.joinToString(", ")})"
+    return "@$fqn(${valuesList.joinToString(", ")})"
 }
 
 private fun renderConstantValue(value: ConstantValue<*>?): String? = value?.accept(object : AnnotationArgumentVisitor<String?, String?> {
