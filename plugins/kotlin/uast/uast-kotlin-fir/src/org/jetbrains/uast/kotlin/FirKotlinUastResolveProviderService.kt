@@ -431,7 +431,7 @@ interface FirKotlinUastResolveProviderService : BaseKotlinUastResolveProviderSer
         return resolvedTargetElement
     }
 
-    override fun resolveToType(ktTypeReference: KtTypeReference, source: UElement, boxed: Boolean): PsiType? {
+    override fun resolveToType(ktTypeReference: KtTypeReference, source: UElement, isBoxed: Boolean): PsiType? {
         analyzeForUast(ktTypeReference) {
             val ktType = ktTypeReference.getKtType()
             if (ktType is KtErrorType) return null
@@ -439,7 +439,7 @@ interface FirKotlinUastResolveProviderService : BaseKotlinUastResolveProviderSer
                 ktType,
                 source,
                 ktTypeReference,
-                PsiTypeConversionConfiguration.create(ktTypeReference, boxed = boxed)
+                PsiTypeConversionConfiguration.create(ktTypeReference, isBoxed = isBoxed)
             )
         }
     }
@@ -478,7 +478,7 @@ interface FirKotlinUastResolveProviderService : BaseKotlinUastResolveProviderSer
                 receiverKtType,
                 source,
                 ktDoubleColonExpression,
-                PsiTypeConversionConfiguration.create(ktDoubleColonExpression, boxed = true)
+                PsiTypeConversionConfiguration.create(ktDoubleColonExpression, isBoxed = true)
             )
         }
     }
@@ -519,7 +519,7 @@ interface FirKotlinUastResolveProviderService : BaseKotlinUastResolveProviderSer
                 ktDeclaration,
                 PsiTypeConversionConfiguration.create(
                     ktDeclaration,
-                    boxed = ktType.isMarkedNullable,
+                    isBoxed = ktType.isMarkedNullable,
                 )
             )
         }
@@ -538,7 +538,7 @@ interface FirKotlinUastResolveProviderService : BaseKotlinUastResolveProviderSer
                 ktDeclaration,
                 PsiTypeConversionConfiguration.create(
                     ktDeclaration,
-                    boxed = ktType.isMarkedNullable,
+                    isBoxed = ktType.isMarkedNullable,
                     isForFake = isForFake,
                 )
             )
